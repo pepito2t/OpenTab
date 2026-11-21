@@ -77,18 +77,23 @@ final class ThumbnailCache: @unchecked Sendable {
 
     init(capacity: Int) { self.capacity = max(1, capacity) }
 
+    /// Hot path: called for every visible cell on each keystroke, so the lookup
+    /// avoids the `defer` closure and unlocks explicitly.
     func image(for id: CGWindowID) -> NSImage? {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
         guard let image = storage[id] else { return nil }
         touch(id)
+        lock.unlock()
         return image
     }
 
+    /// Evicts before the cache reaches `capacity`, so a burst of captures never
+    /// holds more thumbnails than the bound while the loop runs.
     func store(_ image: NSImage, for id: CGWindowID) {
         lock.lock(); defer { lock.unlock() }
         storage[id] = image
         touch(id)
-        while usage.count > capacity {
+        while usage.count >= capacity {
             storage[usage.removeFirst()] = nil
         }
     }
